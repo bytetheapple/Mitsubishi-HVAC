@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<PluginConfig>
+	<SupportURL>http://www.yourdomain.com/plugin/config.html</SupportURL>
+
+
+	<Field id="instructions0" type="label" fontSize="regular" fontColor="darkgray">
+			<Label>Enter credentials for Kumo Cloud account.</Label>
+	</Field>
+	<Field id="userNameText" type="textfield"  defaultValue="User Name">
+		<Label>User Name:</Label>
+	</Field>
+	<Field id="acctPasswordText" type="textfield"  defaultValue="****" secure="true">
+			<Label>Password:</Label>
+		</Field>
+	<Field id="exampleButton" type="button" tooltip="Click this button to do something cool" >
+		<Label>Download KumoCloud Config</Label>
+		<Title>Press to Download</Title>
+		<CallbackMethod>DownloadButtonPressed</CallbackMethod>
+	</Field>
+</PluginConfig>

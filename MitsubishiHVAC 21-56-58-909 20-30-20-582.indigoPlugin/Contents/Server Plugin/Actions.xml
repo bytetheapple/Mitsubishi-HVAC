@@ -1,0 +1,109 @@
+<?xml version="1.0"?>
+<!-- By default the thermostat type devices will inherit all
+	 ThermostatAction actions, which will be dispatched to
+	 the actionControlThermostat() method defined in plugin.py.
+	 
+	 Additional custom actions can also be defined here. The
+	 example below defines a custom action to modify the brightness
+	 of the backlit display of the module, and to modify the custom
+	 backlightBrightness state added to Devices.xml.
+-->
+<Actions>
+	<Action id="toggleGroupMembersActive" deviceFilter="self.mitsubishiHVACGroup">
+			<Name>Toggle Activation of Group Members</Name>
+			<CallbackMethod>toggleGroupMembersActive</CallbackMethod>
+	</Action>
+	<Action id="setGroupMembersActive" deviceFilter="self.mitsubishiHVACGroup">
+		<Name>Activate Devices In Group</Name>
+		<CallbackMethod>setGroupMembersActive</CallbackMethod>
+	</Action>
+	<Action id="setGroupMembersInactive" deviceFilter="self.mitsubishiHVACGroup">
+		<Name>Deactivate Devices In Group</Name>
+		<CallbackMethod>setGroupMembersInactive</CallbackMethod>
+	</Action>
+
+	<Action id="setAllInactive" deviceFilter="self.mitsubishiHVACGroup">
+		<Name>Deactivate All Devices</Name>
+		<CallbackMethod>setAllInactive</CallbackMethod>
+	</Action>
+	<Action id="refreshStatesFromHardware" deviceFilter="self">
+			<Name>Refresh Status</Name>
+			<CallbackMethod>refreshStatesFromHardware</CallbackMethod>
+	</Action>
+	<Action id="setVaneDirection" deviceFilter="self">
+		<Name>Set Vane Direction</Name>
+		<CallbackMethod>setVaneDirection</CallbackMethod>
+	</Action>
+	<Action id="setFanSpeed" deviceFilter="self">
+		<Name>Set Fan Speed</Name>
+		<CallbackMethod>setFanSpeed</CallbackMethod>
+	</Action>
+	<Action id="getUnitStatus" deviceFilter="self">
+		<Name>Get Unit Status</Name>
+		<CallbackMethod>getUnitStatus</CallbackMethod>
+		<ConfigUI>
+			<Field id="description" type="textfield" hidden="true">
+				<Label>runtime calculated</Label>
+			</Field>
+			<Field id="brightness" type="textfield" defaultValue="80">
+				<Label>Backlight Brightness:</Label>
+			</Field>
+		</ConfigUI>
+	</Action>
+	<Action id="addUnitToGroup" deviceFilter="self">
+		<Name>Add Unit To Group</Name>
+		<CallbackMethod>addUnitToGroup</CallbackMethod>
+		<ConfigUI>
+				<Field id="groupId" type="list" >
+				<Label>Group:</Label>
+					<List>
+						<Option value="group1">Home Group</Option>
+						<Option value="group2">Area Group</Option>
+						<Option value="group3">Special Group</Option>
+					</List>								
+				</Field>
+				<Field id="groupName" type="textfield" >
+					<Label>Group Name: </Label>
+				</Field>
+			
+		</ConfigUI>
+	</Action>
+	<Action id="removeUnitFromGroup" deviceFilter="self">
+		<Name>Remove Unit From Group</Name>
+		<CallbackMethod>removeUnitFromGroup</CallbackMethod>
+		<ConfigUI>
+				<Field id="groupId" type="list" >
+				<Label>Group:</Label>
+					<List>
+						<Option value="group1">Home Group</Option>
+						<Option value="group2">Area Group</Option>
+						<Option value="group3">Special Group</Option>
+					</List>								
+				</Field>
+				<Field id="groupName" type="textfield" >
+					<Label>Group Name: </Label>
+				</Field>			
+		</ConfigUI>
+	</Action>
+	<Action id="toggleGroupMembership" deviceFilter="self">
+			<Name>Toggle Group Membership</Name>
+			<CallbackMethod>toggleGroupMembership</CallbackMethod>
+			<ConfigUI>
+					<Field id="groupId" type="list" >
+					<Label>Group:</Label>
+						<List>
+							<Option value="group1">Home Group</Option>
+							<Option value="group2">Area Group</Option>
+							<Option value="group3">Special Group</Option>
+						</List>								
+					</Field>
+					<Field id="groupName" type="textfield" >
+						<Label>Group Name: </Label>
+					</Field>			
+			</ConfigUI>
+		</Action>
+	<Action id="setOffTimerExpiration" deviceFilter="self">
+			<Name>Set the Off Timer Expiration Time</Name>
+			<CallbackMethod>setOffTimerExpiration</CallbackMethod>
+		</Action>
+</Actions>
