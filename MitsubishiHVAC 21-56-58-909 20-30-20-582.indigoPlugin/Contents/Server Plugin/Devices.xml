@@ -281,6 +281,79 @@
 					<ControlPageLabel>Connection Status</ControlPageLabel>
 				</State>
 
+				<State id="nightSet">
+					<ValueType>Boolean</ValueType>
+					<TriggerLabel>Nighttime Parameters have been set</TriggerLabel>
+					<ControlPageLabel>Nighttime Parameters have been set</ControlPageLabel>
+				</State>
+				<State id="nightFanSpeed">
+					<ValueType>Integer</ValueType>
+					<TriggerLabel>Nighttime Fan Speed</TriggerLabel>
+					<ControlPageLabel>Nighttime Fan Speed</ControlPageLabel>
+				</State>
+				<State id="nightVaneDirection">
+					<ValueType>Integer</ValueType>
+					<TriggerLabel>Nighttime Vane Direction</TriggerLabel>
+					<ControlPageLabel>Nighttime Vane Direction</ControlPageLabel>
+				</State>
+				<State id="nightHVACMode">
+					<ValueType>String</ValueType>
+					<TriggerLabel>Nighttime HVAC Mode</TriggerLabel>
+					<ControlPageLabel>Nighttime HVAC Mode</ControlPageLabel>
+				</State>
+				<State id="nightSetpointTemp">
+					<ValueType>Integer</ValueType>
+					<TriggerLabel>Nighttime Setpoint Temperature</TriggerLabel>
+					<ControlPageLabel>Nighttime Setpoint Temperature</ControlPageLabel>
+				</State>
+				<State id="nightSetpointHeat">
+					<ValueType>Integer</ValueType>
+					<TriggerLabel>Nighttime Setpoint Heat</TriggerLabel>
+					<ControlPageLabel>Nighttime Setpoint Heat</ControlPageLabel>
+				</State>
+				<State id="nightSetpointCool">
+					<ValueType>Integer</ValueType>
+					<TriggerLabel>Nighttime Setpoint Cool</TriggerLabel>
+					<ControlPageLabel>Nighttime Setpoint Cool</ControlPageLabel>
+				</State>
+
+				<State id="daySet">
+					<ValueType>Boolean</ValueType>
+					<TriggerLabel>Daytime Parameters have been set</TriggerLabel>
+					<ControlPageLabel>Daytime Parameters have been set</ControlPageLabel>
+				</State>				
+				<State id="dayFanSpeed">
+					<ValueType>Integer</ValueType>
+					<TriggerLabel>Daytime Fan Speed</TriggerLabel>
+					<ControlPageLabel>Daytime Fan Speed</ControlPageLabel>
+				</State>
+				<State id="dayVaneDirection">
+					<ValueType>Integer</ValueType>
+					<TriggerLabel>Daytime Vane Direction</TriggerLabel>
+					<ControlPageLabel>Daytime Vane Direction</ControlPageLabel>
+				</State>
+				<State id="dayHVACMode">
+					<ValueType>String</ValueType>
+					<TriggerLabel>Daytime HVAC Mode</TriggerLabel>
+					<ControlPageLabel>Daytime HVAC Mode</ControlPageLabel>
+				</State>
+				<State id="daySetpointTemp">
+					<ValueType>Integer</ValueType>
+					<TriggerLabel>Daytime Setpoint Temperature</TriggerLabel>
+					<ControlPageLabel>Daytime Setpoint Temperature</ControlPageLabel>
+				</State>
+				<State id="daySetpointHeat">
+					<ValueType>Integer</ValueType>
+					<TriggerLabel>Daytime Setpoint Heat</TriggerLabel>
+					<ControlPageLabel>Daytime Setpoint Heat</ControlPageLabel>
+				</State>
+				<State id="daySetpointCool">
+					<ValueType>Integer</ValueType>
+					<TriggerLabel>Daytime Setpoint Cool</TriggerLabel>
+					<ControlPageLabel>Daytime Setpoint Cool</ControlPageLabel>
+				</State>
+				
+
 
 
 

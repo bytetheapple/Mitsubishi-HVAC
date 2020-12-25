@@ -716,6 +716,33 @@ class Plugin(indigo.PluginBase):
 #			
 
 
+######################
+# Process action request from Indigo Server to set the nighttime parameters on the unit
+# this is mitsubishi unit specific and not in the standard thermostat model
+#
+	def setNightSettings(self,  pluginAction, dev):
+		dev.updateStateOnServer("nightSet", value="True")
+		dev.updateStateOnServer("nightFanSpeed", value=dev.states["displayFanSpeed"])
+		dev.updateStateOnServer("nightVaneDirection", value=dev.states["displayVaneDirection"])
+		dev.updateStateOnServer("nightHVACMode", value=dev.states["displayHVACMode"])
+		dev.updateStateOnServer("nightSetpointTemp", value=dev.states["displaySetpointTemp"])
+		dev.updateStateOnServer("nightSetpointHeat", value=dev.states["displaySetpointHeat"])
+		dev.updateStateOnServer("nightSetpointCool", value=dev.states["displaySetpointCool"])
+		
+
+######################
+# Process action request from Indigo Server to set the daytime parameters on the unit
+# this is mitsubishi unit specific and not in the standard thermostat model
+#
+	def setDaySettings(self,  pluginAction, dev):
+		dev.updateStateOnServer("daySet", value="True")
+		dev.updateStateOnServer("dayFanSpeed", value=dev.states["displayFanSpeed"])
+		dev.updateStateOnServer("dayVaneDirection", value=dev.states["displayVaneDirection"])
+		dev.updateStateOnServer("dayHVACMode", value=dev.states["displayHVACMode"])
+		dev.updateStateOnServer("daySetpointTemp", value=dev.states["displaySetpointTemp"])
+		dev.updateStateOnServer("daySetpointHeat", value=dev.states["displaySetpointHeat"])
+		dev.updateStateOnServer("daySetpointCool", value=dev.states["displaySetpointCool"])
+		
 
 	######################
 	# Process action request from Indigo Server to change thermostat's fan mode.
@@ -1130,3 +1157,4 @@ class Plugin(indigo.PluginBase):
 	def changeHumiditySensorCountTo3(self):
 		self._changeAllHumiditySensorCounts(3)
 
+		

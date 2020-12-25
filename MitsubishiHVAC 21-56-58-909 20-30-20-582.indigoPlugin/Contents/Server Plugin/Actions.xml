@@ -38,6 +38,15 @@
 		<Name>Set Fan Speed</Name>
 		<CallbackMethod>setFanSpeed</CallbackMethod>
 	</Action>
+	<Action id="setNightSettings" deviceFilter="self">
+		<Name>Set Nighttime Unit Settings</Name>
+		<CallbackMethod>setNightSettings</CallbackMethod>
+	</Action>
+	<Action id="setDaySettings" deviceFilter="self">
+		<Name>Set Daytime Unit Settings</Name>
+		<CallbackMethod>setDaySettings</CallbackMethod>
+	</Action>
+	
 	<Action id="getUnitStatus" deviceFilter="self">
 		<Name>Get Unit Status</Name>
 		<CallbackMethod>getUnitStatus</CallbackMethod>
