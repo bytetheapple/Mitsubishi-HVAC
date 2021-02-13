@@ -27,12 +27,16 @@
 	and will support Indigo and Indigo Touch's native UI for thermostat type
 	devices.
 	-->
-	<Device type="custom" id="mitsubishiHVACGroup">
+	<Device type="thermostat" id="mitsubishiHVACGroup">
 				<Name>Mitsubishi HVAC Group</Name>
 				<ConfigUI>					
 					<Field id="groupMembers" type="list">
 						<Label>Members of the Group:</Label>
-						<List class="indigo.devices" filter="self"/>
+						<List class="indigo.devices" filter="self.mitsubishiHVACDuctless"/>
+					</Field>
+					<Field id="groupAutomatedTempControl" type="checkbox" defaultValue="true" tooltip="select to enable automated temperature control for the group">
+						<Label>Automate temperature control for the group</Label>
+						<Title>Select to enable</Title>
 					</Field>
 
 				</ConfigUI>
@@ -42,6 +46,160 @@
 						<TriggerLabel>Group Active</TriggerLabel>
 						<ControlPageLabel>Group Active</ControlPageLabel>
 					</State>
+					<State id="group1">
+						<ValueType>String</ValueType>
+						<TriggerLabel>Home Group</TriggerLabel>
+						<ControlPageLabel>Home Group</ControlPageLabel>
+					</State>
+					<State id="group2">
+						<ValueType>String</ValueType>
+						<TriggerLabel>Area Group</TriggerLabel>
+						<ControlPageLabel>Area Group</ControlPageLabel>
+					</State>
+					<State id="group3">
+						<ValueType>String</ValueType>
+						<TriggerLabel>Special Group</TriggerLabel>
+						<ControlPageLabel>Special Group</ControlPageLabel>
+					</State>
+					
+					## Need to replicate all of the mitsubishiHVACDuctless States here					
+					<State id="displayFanSpeed">
+						<ValueType>Integer</ValueType>
+						<TriggerLabel>Display Fan Speed</TriggerLabel>
+						<ControlPageLabel>Display Fan Speed</ControlPageLabel>
+					</State>
+					<State id="displayVaneDirection">
+						<ValueType>Integer</ValueType>
+						<TriggerLabel>Display Vane Direction</TriggerLabel>
+						<ControlPageLabel>Display Vane Direction</ControlPageLabel>
+					</State>
+					<State id="displayHVACMode">
+						<ValueType>String</ValueType>
+						<TriggerLabel>Display HVAC Mode</TriggerLabel>
+						<ControlPageLabel>Display HVAC Mode</ControlPageLabel>
+					</State>
+					<State id="displayUnitTemp">
+						<ValueType>Integer</ValueType>
+						<TriggerLabel>Display Unit Temperature</TriggerLabel>
+						<ControlPageLabel>Display Unit Temperature</ControlPageLabel>
+					</State>
+					<State id="displayUnitHumidity">
+						<ValueType>Integer</ValueType>
+						<TriggerLabel>Display Unit Humidity</TriggerLabel>
+						<ControlPageLabel>Display Unit Humidity</ControlPageLabel>
+					</State>
+					<State id="displaySetpointTemp">
+						<ValueType>Integer</ValueType>
+						<TriggerLabel>Display Setpoint Temperature</TriggerLabel>
+						<ControlPageLabel>Display Setpoint Temperature</ControlPageLabel>
+					</State>
+					<State id="displaySetpointHeat">
+						<ValueType>Integer</ValueType>
+						<TriggerLabel>Display Setpoint Heat</TriggerLabel>
+						<ControlPageLabel>Display Setpoint Heat</ControlPageLabel>
+					</State>
+					<State id="displaySetpointCool">
+						<ValueType>Integer</ValueType>
+						<TriggerLabel>Display Setpoint Cool</TriggerLabel>
+						<ControlPageLabel>Display Setpoint Cool</ControlPageLabel>
+					</State>
+					<State id='minCoolSetpoint'>
+						<ValueType>String</ValueType>
+						<TriggerLabel>Minimum Cool Setpoint</TriggerLabel>
+						<ControlPageLabel>Minimum Cool Setpoint</ControlPageLabel>
+					</State>
+					<State id='maxHeatSetpoint'>
+						<ValueType>String</ValueType>
+						<TriggerLabel>Maximum Heat Setpoint</TriggerLabel>
+						<ControlPageLabel>Maximum Heat Setpoint</ControlPageLabel>
+					</State>
+					
+					
+					# States that support schedule/Timer function
+					<State id="offTime">
+						<ValueType>String</ValueType>
+						<TriggerLabel>Off Time</TriggerLabel>
+						<ControlPageLabel>Off Time</ControlPageLabel>
+					</State>
+					<State id="timeRemaining">
+						<ValueType>String</ValueType>
+						<TriggerLabel>Time Remaining</TriggerLabel>
+						<ControlPageLabel>Time Remaining</ControlPageLabel>
+					</State>
+
+					# States to support the Wifi adaptor used to connect to the minisplit
+					<State id='adapterSSID'>
+						<ValueType>String</ValueType>
+						<TriggerLabel>WiFi Adaptor SSID</TriggerLabel>
+						<ControlPageLabel>WiFi Adaptor SSID</ControlPageLabel>
+					</State>
+					<State id='adapterRSSI'>
+						<ValueType>String</ValueType>
+						<TriggerLabel>WiFi Adaptor RSSI</TriggerLabel>
+						<ControlPageLabel>WiFi Adaptor RSSI</ControlPageLabel>
+					</State>
+					<State id='connectionStatus'>
+						<ValueType>Integer</ValueType>
+						<TriggerLabel>Conneciton Status</TriggerLabel>
+						<ControlPageLabel>Connection Status</ControlPageLabel>
+					</State>
+					<State id='numOfDisconnectedUnits'>
+						<ValueType>Integer</ValueType>
+						<TriggerLabel>How many units in the group are disconnected</TriggerLabel>
+						<ControlPageLabel>How many units in the group are disconnected</ControlPageLabel>
+					</State>
+					
+					# These states help address the remote wireless temp sensor that units should have if they are part of a control group					
+					<State id="sensorHumidity">
+						<ValueType>String</ValueType>
+						<TriggerLabel>Humidity Sensor Reading</TriggerLabel>
+						<ControlPageLabel>Humidity Sensor Reading</ControlPageLabel>
+					</State>
+					<State id="sensorRSSI">
+						<ValueType>String</ValueType>
+						<TriggerLabel>Sensor Signal Strength</TriggerLabel>
+						<ControlPageLabel>Sensor Signal Strength</ControlPageLabel>
+					</State>
+					<State id="sensorBatteryLevel">
+						<ValueType>String</ValueType>
+						<TriggerLabel>Sensor Battery Level</TriggerLabel>
+						<ControlPageLabel>Sensor Battery Level</ControlPageLabel>
+					</State>
+					<State id='missingTempSensor'>
+						<ValueType>Boolean</ValueType>
+						<TriggerLabel>A Temperature Sensor is Missing</TriggerLabel>
+						<ControlPageLabel>A Temperature Sensor is Missing</ControlPageLabel>
+					</State>
+					<State id='missingTempSensorCount'>
+						<ValueType>Integer</ValueType>
+						<TriggerLabel>Number of missing temp sensors</TriggerLabel>
+						<ControlPageLabel>Number of missing temp sensors</ControlPageLabel>
+					</State>
+					
+					#These states provide information regarding the Automated Temp Control feature for Groups that enable that 
+					<State id='tempControlOnTime'>
+						<ValueType>String</ValueType>
+						<TriggerLabel>Last time thermostat activated the unit</TriggerLabel>
+						<ControlPageLabel>Last time thermostat activated the unit</ControlPageLabel>
+					</State>
+					<State id='tempControlOffTime'>
+						<ValueType>String</ValueType>
+						<TriggerLabel>Last time thermostat turned the unit off</TriggerLabel>
+						<ControlPageLabel>Last time thermostat turned the unit off</ControlPageLabel>
+					</State>
+					<State id='tempControlAveTimeOn'>
+						<ValueType>Number</ValueType>
+						<TriggerLabel>Thermostat Duty Cycle</TriggerLabel>
+						<ControlPageLabel>Thermostat Duty Cycle</ControlPageLabel>
+					</State>
+					<State id='tempControlIsOn'>
+						<ValueType>Boolean</ValueType>
+						<TriggerLabel>Thermostat - units on</TriggerLabel>
+						<ControlPageLabel>Thermostat - units on</ControlPageLabel>
+					</State>
+
+					
+					
 				</States>
 	</Device>				
 
@@ -53,6 +211,10 @@
 				<Field id="label" type="menu">
 					<Label>Room:</Label>
 					<List class="self" filter="stuff" method="generateDeviceList"/>
+				</Field>
+				<Field type="checkbox" id="externalTempSensor" defaultValue="false">
+					<Label>Checkbox:</Label>
+					<Description>Does the unit have an external wireless temp sensor?</Description>
 				</Field>
 				<Field type="checkbox" id="viewDetails" defaultValue="false">
 					<Label>Checkbox:</Label>
@@ -174,11 +336,6 @@
 				is used to control the brightness of the backlit display of
 				the thermostat.
 				-->
-				<State id="backlightBrightness">
-					<ValueType>Integer</ValueType>
-					<TriggerLabel>Backlight Brightness</TriggerLabel>
-					<ControlPageLabel>Backlight Brightness</ControlPageLabel>
-				</State>
 				<State id="displayFanSpeed">
 					<ValueType>Integer</ValueType>
 					<TriggerLabel>Display Fan Speed</TriggerLabel>
@@ -199,6 +356,11 @@
 					<TriggerLabel>Display Unit Temperature</TriggerLabel>
 					<ControlPageLabel>Display Unit Temperature</ControlPageLabel>
 				</State>
+				<State id="displayUnitHumidity">
+					<ValueType>Integer</ValueType>
+					<TriggerLabel>Display Unit Humidity</TriggerLabel>
+					<ControlPageLabel>Display Unit Humidity</ControlPageLabel>
+				</State>				
 				<State id="displaySetpointTemp">
 					<ValueType>Integer</ValueType>
 					<TriggerLabel>Display Setpoint Temperature</TriggerLabel>
@@ -250,6 +412,11 @@
 					<TriggerLabel>Sensor Signal Strength</TriggerLabel>
 					<ControlPageLabel>Sensor Signal Strength</ControlPageLabel>
 				</State>
+				<State id="sensorLost">
+					<ValueType>Boolean</ValueType>
+					<TriggerLabel>Sensor Signal Lost</TriggerLabel>
+					<ControlPageLabel>Sensor Signal Lost</ControlPageLabel>
+				</State>
 				<State id="sensorBatteryLevel">
 					<ValueType>String</ValueType>
 					<TriggerLabel>Sensor Battery Level</TriggerLabel>
@@ -280,7 +447,13 @@
 					<TriggerLabel>Conneciton Status</TriggerLabel>
 					<ControlPageLabel>Connection Status</ControlPageLabel>
 				</State>
-
+				<State id='connectionLost'>
+					<ValueType>Boolean</ValueType>
+					<TriggerLabel>Conneciton Lost</TriggerLabel>
+					<ControlPageLabel>Connection Lost</ControlPageLabel>
+				</State>
+				
+				
 				
 
 

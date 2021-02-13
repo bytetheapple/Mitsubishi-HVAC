@@ -17,4 +17,10 @@
 		<Title>Press to Download</Title>
 		<CallbackMethod>DownloadButtonPressed</CallbackMethod>
 	</Field>
+	<Field id="debugEnabled" type="checkbox" defaultValue="false" tooltip="select to enable debug messages">
+		<Label>Enable Debug</Label>
+		<Title>Select to enable</Title>
+		<CallbackMethod>EnableDebug</CallbackMethod>
+		
+	</Field>
 </PluginConfig>

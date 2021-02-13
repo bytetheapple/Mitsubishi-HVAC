@@ -14,6 +14,7 @@ import urllib
 import base64
 import hashlib
 import datetime
+import math
 
 
 
@@ -72,7 +73,9 @@ class Plugin(indigo.PluginBase):
 		self.debug = False
 		self.simulateTempChanges = True		# Every few seconds update to random temperature values
 		self.simulateHumidityChanges = True	# Every few seconds update to random humidity values
-		self.refreshDelay = 1				# Simulate new temperature values every 1 seconds
+		self.refreshDelay = 5				# Simulate new temperature values every 1 seconds
+		self.groupTempOffset = 3				# Number of degrees past the desired setpoint that each unit in a group is set to in order ot ensure they actually stay on
+		self.debugEnabled = False			# Can be set to True in the Config UI
 	class kumo:
 		def __init__ (self, configuration):
 			#configlist - The entire configuration - delivered as a list.  4 items: The first 3 items are Dict.
@@ -97,7 +100,6 @@ class Plugin(indigo.PluginBase):
 			#self.grandChildrenDict0 = self.grandChildren[0]
 			#self.grandChildrenDict1 = self.grandChildren[1]
 			#self.grandChildrenDict2 = self.grandChildren[2]
-		
 		
 		########################################
 		# parseZones takes a config database that was downloaded from KumoCloud
@@ -124,6 +126,16 @@ class Plugin(indigo.PluginBase):
 # Some utility functions for manipulating number formats
 # useful in calculating hash and formatting messages for sending over http
 ###########
+	######################################
+	# Dynamically enable error logging
+	######################################
+	def EnableDebug(self, valuesDict):#, typeId, devId): #, typeId, devId):
+		# do whatever you need to here
+		self.debug =  valuesDict['debugEnabled']
+		return(valuesDict)
+	
+	
+	
 	# convert a string representation of a long hex nubmer to an array of 2-byte values
 	def hexString2List(self, strng):
 		outputArray = []
@@ -199,7 +211,7 @@ class Plugin(indigo.PluginBase):
 		except:
 			self.logger.info("convertC2F  Error:  cTemp  is not a string or Float: !" + str(cTemp) + "|!")	
 		else:
-			returnValue = (32+int(float(cTemp)*1.8))
+			returnValue = (32+(float(cTemp)*1.8))
 		return returnValue
 		
 	def convertC2Fish(self, cTemp):
@@ -228,6 +240,76 @@ class Plugin(indigo.PluginBase):
 		tmp = 2.0 if fTemp > 87 else tmp;
 		return (cTemp1+tmp);
 
+	#################
+	# File Utilities
+	#################
+	
+
+	def recoverStatesFromDisk(self,dev):
+		results = self.recoverDataFromDisk("statesForDev_"+str(dev.id))
+		if results["success"]:
+			results["data"] = json.loads(results["data"])
+		return(results)
+
+
+
+	def recoverDataFromDisk(self, fileName):
+		returnDict = {"success":False, "data":""}
+		pluginConfigFolder = indigo.server.getInstallFolderPath() + "/Preferences/Plugins/" 
+		if os.path.isdir(pluginConfigFolder):
+			configDir = pluginConfigFolder + self.pluginId
+			if os.path.isfile(configDir+"/"+fileName):
+				f = open(configDir+"/"+fileName, "r")
+				returnDict["data"] = f.read()
+				f.close()
+				returnDict["success"] = True
+		else:
+			returnDict["success"] = False			
+		return(returnDict)
+
+	
+	
+	
+	
+	def saveStatesToDisk(self, dev, keyValueList):
+		recoveredData = self.recoverStatesFromDisk(dev)
+		if recoveredData["success"]:
+			updatedStates = recoveredData["data"]
+		else:
+			updatedStates = {}
+		for item in keyValueList:
+			updatedStates[item["key"]] = item["value"]
+#			if item["key"] in updatedStates:
+#				updatedStates[key] = item["value"]
+#			else:
+#				updatedStates.append({item['key']: item['value']})
+		dataToSave = json.dumps(updatedStates)
+		success = self.saveDataToDisk("statesForDev_"+str(dev.id), dataToSave)
+		return(success)
+		
+
+		
+	def saveDataToDisk(self, fileName, data):
+		success = False
+		pluginConfigFolder = indigo.server.getInstallFolderPath() + "/Preferences/Plugins/" 
+		if os.path.isdir(pluginConfigFolder):
+			configDir = pluginConfigFolder + self.pluginId
+			
+			if not os.path.isdir(configDir):
+				os.mkdir(configDir)
+				self.logger.info("created Directory: "+configDir)
+				
+			f = open(configDir+"/"+fileName, "w+")
+			f.write(data)
+			f.close
+			success = True
+		return(success)
+		
+		
+		
+		
+		
+		
 	###############
 	# generageDeviceList is called when the device config menu is opened
 	# Device List is a dynamic list that allows the user to pick from
@@ -364,10 +446,10 @@ class Plugin(indigo.PluginBase):
 		cserial = dev.pluginProps['cryptoSerial']
 		password = dev.pluginProps['password']
 		name = dev.name
-		#self.logger.info(body)
+		#self.logger.debug(body)
 		success = False
 		responseDirectory = {}
-		#self.logger.info("Sending message to address: "+ address)
+		#self.logger.debug("Sending message to address: "+ address)
 		headers =  {
 					'Accept': 'application/json, text/plain, */*',
 					'Content-Type': 'application/json'
@@ -391,7 +473,7 @@ class Plugin(indigo.PluginBase):
 					responseDirectory = json.loads(theResponse)
 					if	"r" in responseDirectory.keys():
 						success = True	
-						#self.logger.info(responseDirectory)
+						#self.logger.debug(responseDirectory)
 					else:
 						self.logger.debug("Bad response from unit " + address + "  Response received: "+str(theResponse))
 					self.restoreConnectionStatus(dev)	
@@ -411,21 +493,21 @@ class Plugin(indigo.PluginBase):
 	# Calls sendMessageToHVAC to actually communicate with the units
 	# then populates Indigo with the results as appropriate
 	def unitCommunication(self, dev, action, actionValue):
-		
 		if not dev.deviceTypeId == "mitsubishiHVACGroup":
 			commandEntry ={}
+			
 			if action != "status":
 				commandEntry = {action:actionValue}
-				self.logger.info(u"Sending %s command to %s with setting \"%s\" " % (action, dev.name, actionValue))
+				self.logger.debug(u"Sending %s command to %s with setting \"%s\" " % (action, dev.name, actionValue))
 			jBody = json.dumps({"c":{"indoorUnit":{"status":commandEntry}}})
 			stateOfUnit = self.sendMessageToHVAC(dev,jBody)
 			if stateOfUnit[0] == True :	
 				if action != "status":
-					self.logger.info(u"Command %s \"%s\" successfully sent to %s " % (action, actionValue, dev.name))							
+					self.logger.debug(u"Command %s \"%s\" successfully sent to %s " % (action, actionValue, dev.name))							
 				statusDict = stateOfUnit[1]["r"]["indoorUnit"]["status"]
 				if "roomTemp" in statusDict:
 					if statusDict['roomTemp'] != None:
-						dev.updateStateOnServer('displayUnitTemp',value=self.convertC2F(statusDict['roomTemp']))
+						dev.updateStateOnServer('displayUnitTemp',value=self.convertC2F(statusDict['roomTemp']), decimalPlaces=0)
 						
 				if "fanSpeed" in statusDict:
 					dev.updateStateOnServer('displayFanSpeed',value=statusDict['fanSpeed'])
@@ -435,14 +517,16 @@ class Plugin(indigo.PluginBase):
 					
 				if "spCool" in statusDict:
 					if statusDict['spCool'] != None:
-						dev.updateStateOnServer('displaySetpointCool',self.convertC2F(statusDict['spCool']))
-						dev.updateStateOnServer('setpointCool', self.convertC2F(statusDict['spCool']))
+						dev.updateStateOnServer('displaySetpointCool',self.convertC2F(statusDict['spCool']), decimalPlaces = 0)
+						dev.updateStateOnServer('setpointCool', self.convertC2F(statusDict['spCool']), decimalPlaces = 0)
+						dev.updateStateOnServer('displaySetpointTemp',self.convertC2F(statusDict["spCool"]), decimalPlaces = 0)
 						#dev.updateStateOnServer('displaySetpointTemp',self.convertC2F(statusDict["spCool"]))					
 					
 				if "spHeat" in statusDict:
 					if statusDict['spHeat'] != None:
-						dev.updateStateOnServer('displaySetpointHeat',self.convertC2F(statusDict['spHeat']))
-						dev.updateStateOnServer('setpointHeat', self.convertC2F(statusDict['spHeat']))
+						dev.updateStateOnServer('displaySetpointHeat',self.convertC2F(statusDict['spHeat']), decimalPlaces = 0)
+						dev.updateStateOnServer('setpointHeat', self.convertC2F(statusDict['spHeat']), decimalPlaces = 0)
+						dev.updateStateOnServer('displaySetpointTemp',self.convertC2F(statusDict["spHeat"]), decimalPlaces = 0)
 						#dev.updateStateOnServer('displaySetpointTemp',self.convertC2F(statusDict["spHeat"]))
 					
 				if "mode" in statusDict:
@@ -451,15 +535,20 @@ class Plugin(indigo.PluginBase):
 						dev.updateStateOnServer('hvacOperationMode', indigo.kHvacMode.Heat)
 						if "spHeat" in statusDict:
 							if statusDict['spHeat'] != None:
-								dev.updateStateOnServer('displaySetpointTemp',self.convertC2F(statusDict["spHeat"]))
+								dev.updateStateOnServer('displaySetpointTemp',self.convertC2F(statusDict["spHeat"]), decimalPlaces = 0)
+								dev.updateStateOnServer('setpointHeat', self.convertC2F(statusDict['spHeat']), decimalPlaces = 0)
 					elif statusDict['mode']=="cool": 							
 						dev.updateStateOnServer('hvacOperationMode', indigo.kHvacMode.Cool)
 						if "spCool" in statusDict:
 							if statusDict['spCool'] != None:
-								dev.updateStateOnServer('displaySetpointTemp',self.convertC2F(statusDict["spCool"]))
+								dev.updateStateOnServer('displaySetpointTemp',self.convertC2F(statusDict["spCool"]), decimalPlaces = 0)
+								dev.updateStateOnServer('setpointCool', self.convertC2F(statusDict['spCool']), decimalPlaces = 0)
+					elif statusDict['mode']=="off": 							
+						dev.updateStateOnServer('hvacOperationMode', indigo.kHvacMode.Off)
+														
 			else:
 				if action != "status":
-					self.logger.info(u"Command %s \"%s\" failed to send to %s " % (action, actionValue, dev.name))
+					self.logger.debug(u"Command %s \"%s\" failed to send to %s " % (action, actionValue, dev.name))
 				
 			if action == "status":
 				# Next Get the Temp Sensor States States			
@@ -468,9 +557,14 @@ class Plugin(indigo.PluginBase):
 				if stateOfUnit[0] == True:
 					
 					statusDict = stateOfUnit[1]["r"]["sensors"]["0"]
-					dev.updateStateOnServer('sensorHumidity',statusDict['humidity'])
-					dev.updateStateOnServer('sensorRSSI',statusDict['rssi'])
-					dev.updateStateOnServer('sensorBatteryLevel',statusDict['battery'])
+					dev.updateStateOnServer('sensorHumidity',statusDict['humidity'], decimalPlaces = 0)
+					dev.updateStateOnServer('sensorRSSI',statusDict['rssi'], decimalPlaces = 0)
+					if dev.pluginProps['externalTempSensor']:					
+						if str(statusDict['rssi']) == "None":
+							dev.updateStateOnServer('sensorLost', True)
+						else:
+							dev.updateStateOnServer('sensorLost', False)
+					dev.updateStateOnServer('sensorBatteryLevel',statusDict['battery'], decimalPlaces = 0)
 				
 				# Next Get the WIFI Adaptor States States			
 				jBody = json.dumps({"c":{"adapter":{"status":{},"info":{}}}})
@@ -481,6 +575,14 @@ class Plugin(indigo.PluginBase):
 					dev.updateStateOnServer('adapterRSSI',statusDict['localNetwork']['stationMode']['RSSI'])
 					dev.updateStateOnServer('minCoolSetpoint',statusDict['userMinCoolSetPoint'])
 					dev.updateStateOnServer('maxHeatSetpoint',statusDict['userMaxHeatSetPoint'])
+				# Next Get the Indoor Unit States States			
+				jBody = json.dumps({"c":{"indoorUnit":{"status":{}}}})
+				stateOfUnit = self.sendMessageToHVAC(dev,jBody)
+				if stateOfUnit[0] == True:
+					statusDict = stateOfUnit[1]["r"]["indoorUnit"]["status"]	
+					if "roomTemp" in statusDict:
+						if statusDict['roomTemp'] != None:
+							dev.updateStateOnServer(key="temperatureInput1", value= self.convertC2F(statusDict['roomTemp']), decimalPlaces = 0)
 			
 	######################
 	# Method to set the device's off timer
@@ -488,7 +590,7 @@ class Plugin(indigo.PluginBase):
 	def setOffTimerExpiration(self, pluginAction, dev):
 		offTime = str(pluginAction.props.get("offTime"))
 		dev.updateStateOnServer('offTime',offTime)
-		self.logger.info("offTime for dev " + dev.name + "= " + offTime)
+		self.logger.debug("offTime for dev " + dev.name + "= " + offTime)
 
 
 
@@ -501,15 +603,17 @@ class Plugin(indigo.PluginBase):
 		zeroTime = datetime.datetime.min
 		zeroString = zeroTime.isoformat()+".000000"
 		nowString = now.isoformat()
-		
 		offTime = datetime.datetime.strptime(dev.states["offTime"], "%Y-%m-%dT%H:%M:%S.%f")
 
 		if not offTime == zeroTime:
 			if now > offTime:
-				self.logger.info("Timer expired for " + dev.name + " so turning unit off")
+				self.logger.debug("Timer expired for " + dev.name + " so turning unit off")
 				dev.updateStateOnServer('offTime',zeroString)
 				dev.updateStateOnServer('timeRemaining',' ')
-				self._handleChangeHvacModeAction(dev, indigo.kHvacMode.Off)
+				#action = {"thermostatAction":indigo.kThermostatAction.SetHvacMode, "description":"Timer Expired - turn unit off", "actionMode":indigo.kHvacMode.Off}
+				indigo.thermostat.setHvacMode(dev, value=indigo.kHvacMode.Off)
+				#self.actionControlThermostat(action, dev)
+				#self._handleChangeHvacModeAction(dev, indigo.kHvacMode.Off)
 			else:
 				remainingTime = str((offTime -now).seconds/60+1)
 				dev.updateStateOnServer('timeRemaining',remainingTime)
@@ -520,7 +624,10 @@ class Plugin(indigo.PluginBase):
 	# Method to expose the refreshStatesFromHardware to scripting
 	# 
 	def	refreshStatesFromHardware(self,pluginAction, dev):
-		self._refreshStatesFromHardware(dev, True, True)
+		if dev.deviceTypeId == "mitsubishiHVACGroup":
+				self._refreshStatesFromUnits(dev)
+		else:
+			self._refreshStatesFromHardware(dev, True, True)
 
 
 
@@ -529,56 +636,6 @@ class Plugin(indigo.PluginBase):
 	# Indigo Server.
 	def _refreshStatesFromHardware(self, dev, logRefresh, commJustStarted):
 		self.unitCommunication(dev, "status", "")
-#		if not dev.deviceTypeId == "mitsubishiHVACGroup":
-#			# First Get the operating States			
-#			jBody = json.dumps({"c":{"indoorUnit":{"status":{}}}})
-#			stateOfUnit = self.sendMessageToHVAC(dev,jBody)
-#			if stateOfUnit[0] == True :			
-#				
-#				statusDict = stateOfUnit[1]["r"]["indoorUnit"]["status"]
-#				keyValueList = []
-#				if statusDict['roomTemp'] != None:
-#					dev.updateStateOnServer('displayUnitTemp',value=self.convertC2F(statusDict['roomTemp']))
-#					dev.updateStateOnServer('displayFanSpeed',value=statusDict['fanSpeed'])
-#					dev.updateStateOnServer('displayVaneDirection',value=statusDict['vaneDir'])
-#					dev.updateStateOnServer('displaySetpointCool',value=self.convertC2F(statusDict['spCool']))
-#					keyValueList.append({'key':'setpointHeat', 'value':self.convertC2F(statusDict['spCool'])})
-#					dev.updateStateOnServer('displaySetpointHeat',value=self.convertC2F(statusDict['spHeat']))
-#					keyValueList.append({'key':'setpointHeat', 'value':self.convertC2F(statusDict['spHeat'])})
-#					dev.updateStateOnServer('displayHVACMode',value=statusDict['mode'])
-#				
-#
-#					if statusDict['mode']=="heat": 
-#						keyValueList.append({'key':'hvacOperationMode', 'value':indigo.kHvacMode.Heat})
-#						dev.updateStateOnServer('displaySetpointTemp',value=self.convertC2F(statusDict["spHeat"]))
-#					elif statusDict['mode']=="cool": 
-#						keyValueList.append({'key':'hvacOperationMode', 'value':indigo.kHvacMode.Cool})
-#						dev.updateStateOnServer('displaySetpointTemp',value=self.convertC2F(statusDict["spCool"]))
-#					if len(keyValueList) > 0:
-#						dev.updateStatesOnServer(keyValueList)
-#				else:
-#					self.logger.debug("bad value in statsDict: " + str(statusDict))
-#				
-#			# Next Get the Temp Sensor States States			
-#			jBody = json.dumps({"c":{"sensors":{}}})
-#			stateOfUnit = self.sendMessageToHVAC(dev,jBody)
-#			if stateOfUnit[0] == True:
-#				
-#				statusDict = stateOfUnit[1]["r"]["sensors"]["0"]
-#				dev.updateStateOnServer('sensorHumidity',value=statusDict['humidity'])
-#				dev.updateStateOnServer('sensorRSSI',value=statusDict['rssi'])
-#				dev.updateStateOnServer('sensorBatteryLevel',value=statusDict['battery'])
-#			
-#			# Next Get the WIFI Adaptor States States			
-#			jBody = json.dumps({"c":{"adapter":{"status":{},"info":{}}}})
-#			stateOfUnit = self.sendMessageToHVAC(dev,jBody)
-#			if stateOfUnit[0] == True:
-#				statusDict = stateOfUnit[1]["r"]["adapter"]["status"]
-#				dev.updateStateOnServer('adapterSSID',value=statusDict['localNetwork']['stationMode']['SSID'])
-#				dev.updateStateOnServer('adapterRSSI',value=statusDict['localNetwork']['stationMode']['RSSI'])
-#				dev.updateStateOnServer('minCoolSetpoint',value=statusDict['userMinCoolSetPoint'])
-#				dev.updateStateOnServer('maxHeatSetpoint',value=statusDict['userMaxHeatSetPoint'])
-#
 		
 		
 	######################
@@ -587,23 +644,7 @@ class Plugin(indigo.PluginBase):
 	def _handleChangeHvacModeAction(self, dev, newHvacMode):
 
 		actionStr = _lookupActionStrFromHvacMode(newHvacMode)
-		self.logger.info(actionStr)
-		self.logger.info(newHvacMode)
 		self.unitCommunication(dev,"mode", actionStr)
-#		jBody = json.dumps({"c":{"indoorUnit":{"status":{"mode":actionStr}}}})
-#		stateOfUnit = self.sendMessageToHVAC(dev,jBody)		
-#		if stateOfUnit[0] == True:
-#			statusDict = stateOfUnit[1]["r"]["indoorUnit"]["status"]
-#			self.logger.info(u"sent \"%s\" mode change to %s" % (dev.name, actionStr))
-#
-#			# And then tell the Indigo Server to update the state.
-#			if "hvacOperationMode" in dev.states:
-#				dev.updateStateOnServer("hvacOperationMode", newHvacMode)
-#				dev.updateStateOnServer('displayHVACMode',value=statusDict["mode"])
-#		
-#		else:
-#			# Else log failure but do NOT update state on Indigo Server.
-#			self.logger.info(u"send \"%s\" mode change to %s failed" % (dev.name, actionStr))
 
 
 
@@ -622,40 +663,10 @@ class Plugin(indigo.PluginBase):
 		if stateKey == u"setpointCool":
 			self.unitCommunication(dev,"spCool", newSetpointC)
 			
-#			jBody = json.dumps({"c":{"indoorUnit":{"status":{"spCool":newSetpointC}}}})
-#			stateOfUnit = self.sendMessageToHVAC(dev,jBody)
-#			if stateOfUnit[0] == True:
-#				sendSuccess = True
-#				statusDict = stateOfUnit[1]["r"]["indoorUnit"]["status"]
-#				if statusDict["spCool"] != None:					
-#					dev.updateStateOnServer('displaySetpointCool',value=self.convertC2F(statusDict["spCool"]))
-#					dev.updateStateOnServer('displaySetpointTemp',value=self.convertC2F(statusDict["spCool"]))
-#				
+				
 			
 		elif stateKey == u"setpointHeat":
 			self.unitCommunication(dev,"spHeat", newSetpointC)
-#			jBody = json.dumps({"c":{"indoorUnit":{"status":{"spHeat":newSetpointC}}}})
-#			stateOfUnit = self.sendMessageToHVAC(dev,jBody)
-#			if stateOfUnit[0] == True:
-#				sendSuccess = True
-#				statusDict = stateOfUnit[1]["r"]["indoorUnit"]["status"]
-#				if statusDict["spHeat"] != None:
-#					
-#					dev.updateStateOnServer('displaySetpointHeat',value=self.convertC2F(statusDict["spHeat"]))
-#					dev.updateStateOnServer('displaySetpointTemp',value=self.convertC2F(statusDict["spHeat"]))
-#				
-
-#		if sendSuccess == True:
-#			# If success then log that the command was successfully sent.
-#			self.logger.info(u"sent \"%s\" %s to %.1f°" % (dev.name, logActionName, newSetpoint))
-#
-#			# And then tell the Indigo Server to update the state.
-#			if stateKey in dev.states:
-#				dev.updateStateOnServer(stateKey, newSetpoint, uiValue="%.1f °F" % (newSetpoint))
-#		else:
-#			# Else log failure but do NOT update state on Indigo Server.
-#			self.logger.info(u"send \"%s\" %s to %.1f° failed" % (dev.name, logActionName, newSetpoint))
-
 
 
 
@@ -667,23 +678,6 @@ class Plugin(indigo.PluginBase):
 		sendSuccess = False		# Set to False if it failed.
 		newVaneDirection = str(pluginAction.props.get("vaneDirection"))
 		self.unitCommunication(dev,"vaneDir", newVaneDirection)
-#		self.logger.debug("setVaneDirection:  set vane Direction = " )
-#		self.logger.debug(newVaneDirection)
-#		jBody = json.dumps({"c":{"indoorUnit":{"status":{"vaneDir":newVaneDirection}}}})
-#		stateOfUnit = self.sendMessageToHVAC(dev,jBody)
-#		if stateOfUnit[0] == True:
-#			sendSuccess = True
-#			statusDict = stateOfUnit[1]["r"]["indoorUnit"]["status"]
-#			dev.updateStateOnServer('displayVaneDirection',value=statusDict["vaneDir"])
-#
-#		if sendSuccess == True:
-#			# If success then log that the command was successfully sent.
-#			self.logger.info(u"Set the Vane Direction of HVAC Unit \"%s\"  to %s°" % (dev.name, newVaneDirection))
-#
-#		else:
-#			# Else log failure but do NOT update state on Indigo Server.
-#			self.logger.info(u"Failed to set the Vane Direction of HVAC Unit \"%s\"  to %s°" % (dev.name, newVaneDirection))
-#			
 			
 			
 			
@@ -697,23 +691,6 @@ class Plugin(indigo.PluginBase):
 		newFanSpeed = str(pluginAction.props.get("fanSpeed"))
 		self.unitCommunication(dev,"fanSpeed", newFanSpeed)
 		
-#		self.logger.debug("setFanSpeed: set fan speed = " )
-#		self.logger.debug(newFanSpeed)
-#		jBody = json.dumps({"c":{"indoorUnit":{"status":{"fanSpeed":newFanSpeed}}}})
-#		stateOfUnit = self.sendMessageToHVAC(dev,jBody)
-#		if stateOfUnit[0] == True:
-#			sendSuccess = True
-#			statusDict = stateOfUnit[1]["r"]["indoorUnit"]["status"]
-#			dev.updateStateOnServer('displayFanSpeed',value=statusDict["fanSpeed"])
-#
-#		if sendSuccess == True:
-#			# If success then log that the command was successfully sent.
-#			self.logger.info(u"Set the Fan Speed of HVAC Unit \"%s\"  to %s°" % (dev.name, newFanSpeed))
-#
-#		else:
-#			# Else log failure but do NOT update state on Indigo Server.
-#			self.logger.info(u"Failed to set the Fan Speed of HVAC Unit \"%s\"  to %s°" % (dev.name, newFanSpeed))
-#			
 
 
 
@@ -722,19 +699,6 @@ class Plugin(indigo.PluginBase):
 	# NOT USED.  Just left this stub in the code
 	def _handleChangeFanModeAction(self, dev, newFanMode):
 		sendSuccess = True		# Set to False if it failed.
-#
-#		actionStr = _lookupActionStrFromFanMode(newFanMode)
-#		if sendSuccess:
-#			# If success then log that the command was successfully sent.
-#			indigo.server.log(u"sent \"%s\" fan mode change to %s" % (dev.name, actionStr))
-#
-#			# And then tell the Indigo Server to update the state.
-#			if "hvacFanMode" in dev.states:
-#				dev.updateStateOnServer("hvacFanMode", newFanMode)
-#		else:
-#			# Else log failure but do NOT update state on Indigo Server.
-#			indigo.server.log(u"send \"%s\" fan mode change to %s failed" % (dev.name, actionStr), isError=True)
-
 
 
 ##########################################################################
@@ -751,8 +715,10 @@ class Plugin(indigo.PluginBase):
 		connectionStatus = dev.states['connectionStatus'] 
 		if connectionStatus < 10:
 			if connectionStatus == 0:
-				self.logger.info("HVAC Unit " + str(dev.name) + " is reachable again")							
+				self.logger.info("HVAC Unit " + str(dev.name) + " is reachable again")
+				
 			connectionStatus = 10
+		dev.updateStateOnServer('connectionLost',value=False)
 		dev.updateStateOnServer('connectionStatus',value=connectionStatus)
 
 	def reduceConnectionStatus (self, dev):
@@ -762,7 +728,8 @@ class Plugin(indigo.PluginBase):
 		if connectionStatus > 0:
 			connectionStatus -= 1
 			if connectionStatus == 0:
-				self.logger.info("HVAC Unit " + str(dev.name) + " isn't reachable.  Check WiFi connection")					
+				self.logger.info("HVAC Unit " + str(dev.name) + " isn't reachable.  Check WiFi connection")	
+				dev.updateStateOnServer('connectionLost',value=True)
 		dev.updateStateOnServer('connectionStatus',value=connectionStatus)			
 
 
@@ -813,10 +780,10 @@ class Plugin(indigo.PluginBase):
 		groupName = pluginAction.props.get(u"groupName")
 		self.logger.info("toggleGroupMembership: groupID = " + str(groupId) + "groupName= " + str(groupName))
 		if dev.states[groupId] == groupName:
-			dev.states[groupId] ==""
+
 			dev.updateStateOnServer(key=groupId, value="")
 		else:
-			dev.states[groupId] = groupName
+
 			dev.updateStateOnServer(key=groupId, value=groupName)
 		for device in indigo.devices:			
 			if device.deviceTypeId =="mitsubishiHVACGroup" :
@@ -895,11 +862,171 @@ class Plugin(indigo.PluginBase):
 			if device.deviceTypeId =="mitsubishiHVACGroup" :
 				device.updateStateOnServer("groupActive", value= False)	
 
+	def setAllInactive(self, pluginAction, dev):
+		self.logger.info("Hello World")
+		
 
+	
+	
+	
 
-
-
+	
+	
+		
+	def _refreshStatesFromUnits(self, dev):
+		if dev.deviceTypeId == "mitsubishiHVACGroup":
+			# Update Temperature and Humidity
+			sumOfTemps = 0
+			sumOfHumidity = 0
+			sumOfRemoteTemps = 0
+			sumOfRemoteHumidity = 0
+			numOfSensors = 0
+			numOfRemoteSensors = 0
+			unitsWithRemoteSensors = 0
+			numOfUnits = 0
+			numOfDisconnectedUnits = 0
+			connectionStatus = 10
+			batteryLevel = 100
+			deviceIdList = dev.ownerProps.get("groupMembers")
+			for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
+				
+				if str(tmpDev.id) in deviceIdList:   #Device is in the group
+					numOfUnits +=1
+					numOfDisconnectedUnits += 1 if tmpDev.states["connectionStatus"]==0 else 0
+					if tmpDev.states["connectionStatus"] < connectionStatus:
+						connectionStatus = tmpDev.states["connectionStatus"]
+					sensorBatteryLevel = tmpDev.states["sensorBatteryLevel"]
+					if  sensorBatteryLevel != "" and int(sensorBatteryLevel) < batteryLevel:
+						batteryLevel = int(sensorBatteryLevel)  # Set the sensor battery level to the lowest level of any sensor in the group
+#					self.logger.info("Refreshing Group \"%s device: \"%s Current Temp:\"%s  Current Humidity:\" %s Sensor RSSI: \"%s" % (dev.name, tmpDev.name, tmpDev.states["temperatureInput1"], tmpDev.states["sensorHumidity"], tmpDev.states["sensorRSSI"]) )
+					
+					# For Groups that don't have any remote Sensors
+					sumOfTemps += float(tmpDev.states["temperatureInput1"])
+					#sumOfHumidity += float(tmpDev.states["sensorHumidity"])
+					numOfSensors += 1
+				
+					
+					#For Groups that do have remote sensors
+					if  tmpDev.states["sensorRSSI"] != "":
+						sumOfRemoteTemps += float(tmpDev.states["temperatureInput1"])
+						sumOfRemoteHumidity += float(tmpDev.states["sensorHumidity"])
+						numOfRemoteSensors += 1
+					if tmpDev.pluginProps['externalTempSensor']:
+						unitsWithRemoteSensors +=1
 			
+			keyValueList = []
+			keyValueList.append({'key':'connectionStatus', 'value':connectionStatus})# If Connection status of any unit is equal to 0 then set this to 0 (disconnected)		
+			
+			if numOfRemoteSensors > 0:
+				aveTemp = sumOfRemoteTemps / numOfRemoteSensors
+				aveHumidity = sumOfRemoteHumidity / numOfRemoteSensors
+			else:
+				aveTemp = sumOfTemps / numOfSensors
+				aveHumidity = 0
+
+			keyValueList.append({'key':'numOfDisconnectedUnits', 'value':numOfDisconnectedUnits})	
+			keyValueList.append({'key':'sensorBatteryLevel', 'value':sensorBatteryLevel})
+			keyValueList.append({'key':'temperatureInput1', 'value':aveTemp, 'decimalPlaces':0})
+			keyValueList.append({'key':'displayUnitTemp', 'value':aveTemp, 'decimalPlaces':0})
+			keyValueList.append({'key':'sensorHumidity', 'value':aveHumidity, 'decimalPlaces':0})
+			keyValueList.append({'key':'displayUnitHumidity', 'value':aveHumidity, 'decimalPlaces':0})
+							
+			missingSensor = (numOfRemoteSensors < numOfUnits)
+			keyValueList.append({'key':"missingTempSensor", 'value':missingSensor})
+			keyValueList.append({'key':"missingTempSensorCount", 'value':unitsWithRemoteSensors - numOfRemoteSensors})
+				
+			for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
+				for stateLabel in ["displayFanSpeed","displayVaneDirection"]:
+					if stateLabel in keyValueList:
+						keyValueList[stateLabel]
+					else:
+						keyValueList.append({'key':stateLabel, 'value':tmpDev.states[stateLabel]})
+					
+			dev.updateStatesOnServer(keyValueList)
+			self.saveStatesToDisk(dev, keyValueList)
+	
+
+
+
+	######################
+	# Virtual Group Thermostat
+	# Will 
+	#	-check to make sure that all units in the group are in the same mode
+	#	- Average the temp for all units that have a wireless temp sensor
+	# deactivate all of the units (regardless of what group they are associated with)
+	# and then set all of the groups themselves to the "deactivated" state 
+	#	
+	
+	def groupTemperatureControl(self,dev):
+		if dev.deviceTypeId == "mitsubishiHVACGroup":
+			if dev.ownerProps.get("groupAutomatedTempControl"):
+				devMode = dev.states["hvacOperationMode"]
+				devSpHeat = float(dev.states["setpointHeat"])
+				devSpCool = float(dev.states["setpointCool"])
+				devCurrentTemp = float(dev.states["temperatureInput1"])
+				deviceIdList = dev.ownerProps.get("groupMembers")
+				now = datetime.datetime.today()		
+				nowString = now.isoformat()
+				offTime = datetime.datetime.strptime(dev.states["tempControlOffTime"], "%Y-%m-%dT%H:%M:%S.%f")
+				onTime = datetime.datetime.strptime(dev.states["tempControlOnTime"], "%Y-%m-%dT%H:%M:%S.%f")
+				
+				
+				for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
+					if str(tmpDev.id) in deviceIdList:   #Device is in the group
+						if tmpDev.states["connectionStatus"]>0: # Don't bother if the unit isn't listening
+							if devMode == indigo.kHvacMode.Heat:
+								if devCurrentTemp < devSpHeat and tmpDev.states["hvacOperationMode"] == indigo.kHvacMode.Off:
+									#Turn the units on becauce the temp is low
+									offPeriod = now - offTime
+									onPeriod = offTime- onTime
+									aveOnTime = 0 if offPeriod.seconds == 0 else 100*onPeriod.seconds/offPeriod.seconds
+									dev.updateStateOnServer("tempControlAveTimeOn", aveOnTime,  decimalPlaces=1)
+									dev.updateStateOnServer("tempControlOnTime", nowString)
+									dev.updateStateOnServer("tempControlIsOn", True)
+									self._handleChangeHvacModeAction(tmpDev, indigo.kHvacMode.Heat)
+									newSetPoint = devSpHeat+self.groupTempOffset
+									self._handleChangeSetpointAction(tmpDev, newSetPoint, u"change heat setpoint", u"setpointHeat")
+									self.logger.info("Adjusting Group \"%s device: \"%s Current Temp:\"%s  turning the heat up to  \"%s" % (dev.name, tmpDev.name, dev.states["temperatureInput1"], str(newSetPoint)) )
+									
+								elif devCurrentTemp > devSpHeat and tmpDev.states["hvacOperationMode"] == indigo.kHvacMode.Heat:
+									#Turn the unit off becasue the temp is right
+									offPeriod = onTime - offTime
+									onPeriod = now - onTime
+									aveOnTime = 0 if offPeriod.seconds == 0 else 100*onPeriod.seconds/offPeriod.seconds
+									dev.updateStateOnServer("tempControlAveTimeOn", aveOnTime,  decimalPlaces=1)									
+									dev.updateStateOnServer("tempControlOffTime", nowString)
+									dev.updateStateOnServer("tempControlIsOn", False)
+									self._handleChangeHvacModeAction(tmpDev, indigo.kHvacMode.Off)
+									self.logger.info("Adjusting Group \"%s device: \"%s Current Temp:\"%s  turning off the heat ." % (dev.name, tmpDev.name, dev.states["temperatureInput1"]) )
+		
+							elif devMode == indigo.kHvacMode.Cool:
+								if devCurrentTemp > devSpCool and tmpDev.states["hvacOperationMode"] == indigo.kHvacMode.Off:
+									#Turn the units on becauce the temp is high
+									offPeriod = now - offTime
+									onPeriod = offTime- onTime
+									aveOnTime = 0 if offPeriod.seconds == 0 else 100*onPeriod.seconds/offPeriod.seconds
+									dev.updateStateOnServer("tempControlAveTimeOn", aveOnTime,  decimalPlaces=1)									
+									dev.updateStateOnServer("tempControlOnTime", nowString)
+									dev.updateStateOnServer("tempControlIsOn", True)
+									self._handleChangeHvacModeAction(tmpDev, indigo.kHvacMode.Cool)
+									newSetPoint = devSpCool-self.groupTempOffset 
+									self._handleChangeSetpointAction(tmpDev, newSetPoint, u"change cool setpoint", u"setpointCool")
+									self.logger.info("Adjusting Group \"%s device: \"%s Current Temp:\"%s  turning cool down to  \"%s" % (dev.name, tmpDev.name, dev.states["temperatureInput1"], str(newSetPoint)) )
+									
+								elif devCurrentTemp < devSpCool and tmpDev.states["hvacOperationMode"] == indigo.kHvacMode.Cool:
+									#Turn the unit off becasue the temp is right
+									offPeriod = onTime - offTime
+									onPeriod = now - onTime
+									aveOnTime = 0 if offPeriod.seconds == 0 else 100*onPeriod.seconds/offPeriod.seconds
+									dev.updateStateOnServer("tempControlAveTimeOn", aveOnTime,  decimalPlaces=1)									
+									dev.updateStateOnServer("tempControloffTime", nowString)
+									dev.updateStateOnServer("tempControlIsOn", False)
+									self._handleChangeHvacModeAction(tmpDev, indigo.kHvacMode.Off)
+									self.logger.info("Adjusting Group \"%s device: \"%s Current Temp:\"%s  turning off the cool" % (dev.name, tmpDev.name, dev.states["temperatureInput1"]) )
+			
+			
+			
+
 	########################################
 	def startup(self):
 		self.debugLog(u"startup called")
@@ -921,6 +1048,18 @@ class Plugin(indigo.PluginBase):
 					# Indigo Server.
 						self.checkOffTimerExpiration(dev)
 						self._refreshStatesFromHardware(dev, False, False)
+					
+					else:
+						if not dev.enabled or not dev.configured:
+								continue
+						
+					# Plugins that need to poll out the status from the thermostat
+					# could do so here, then broadcast back the new values to the
+					# Indigo Server.
+						self.checkOffTimerExpiration(dev)
+						self._refreshStatesFromUnits(dev)
+						self.groupTemperatureControl(dev)
+						
 
 				self.sleep(self.refreshDelay)
 		except self.StopThread:
@@ -941,66 +1080,187 @@ class Plugin(indigo.PluginBase):
 	def deviceStartComm(self, dev):
 		self.logger.info("deviceStartComm " + dev.name )
 		dev.stateListOrDisplayStateIdChanged()
-		if not dev.deviceTypeId == "mitsubishiHVACGroup":
-			#Initialize the off timer to it's disabled state
-			zeroTime = datetime.datetime.min
-			zeroString = zeroTime.isoformat()+".000000"
-			dev.updateStateOnServer('offTime',zeroString)
-			dev.updateStateOnServer('timeRemaining', " ")
-		self._refreshStatesFromHardware(dev, True, True)
-		return
-
+		#Initialize the off timer to it's disabled state
+		zeroTime = datetime.datetime.min
+		zeroString = zeroTime.isoformat()+".000000"
+		dev.updateStateOnServer('offTime',zeroString)
+		dev.updateStateOnServer('timeRemaining', " ")
+		
+		
+		if dev.deviceTypeId == "mitsubishiHVACGroup":
+			# Initialeze the exposed states for the group:  SetpointCool, SetpointHeat, and set Mode to "Off".   All other states will be updated during _refereshStatesFromUnits
+			keyValueList = []
+			results = self.recoverStatesFromDisk(dev)
+			thermStates = ['setpointHeat','setpointCool', 'displayHVACMode', 'hvacOperationMode', 'displaySetpointTemp' ]
+			for key in thermStates:
+				if results["success"] and key in results["data"]:
+					keyValueList.append({'key':key, 'value':results["data"][key]})
+				
+				else: # State not saved for this device so it is probably just created
+					deviceIdList = dev.ownerProps.get("groupMembers")
+					for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
+						if str(tmpDev.id) in deviceIdList:   #Device is in the group
+							keyValueList.append({'key':key, 'value':tmpDev.states[key]})# Initialize Group setpoints to the setpoint of one of the units in the group
+			now = datetime.datetime.today()		
+			nowString = now.isoformat()
+			keyValueList.append({'key':"tempControlOffTime", 'value':nowString})
+			keyValueList.append({'key':"tempControlOnTime", 'value':nowString})
+			dev.updateStatesOnServer(keyValueList)
+			self.saveStatesToDisk(dev, keyValueList)
+				
+			
+				
 	def deviceStopComm(self, dev):
 		# Called when communication with the hardware should be shutdown.
 		pass
 
+		
+		
+	########################################
+	# These are wrapper callbacks.  They are called if the device being controlled is a group device
+	######################
+	def actionControlGroupThermostat(self, action, dev):
+		self.logger.info("************Group Control ***********")
+		self.logger.info("Action: "+ str(action.__class__.__name__))
+		self.logger.info("Someone asked for something - Mitsubishi HVAC GROUP Thermostat Action Callback  \"%s\"%s\" %s" % (dev.name, action.description, ".") )
+		deviceIdList = dev.ownerProps.get("groupMembers")
+		###### SET HVAC MODE ######		
+		if action.thermostatAction == indigo.kThermostatAction.SetHvacMode:
+			# First update the ThermostatModes in Indigo for this device
+			keyValueList = []
+			keyValueList.append({'key':'displayHVACMode', 'value':kHvacModeEnumToStrMap[action.actionMode]})
+			keyValueList.append({'key':'hvacOperationMode', 'value': action.actionMode})
+			dev.updateStatesOnServer(keyValueList)
+			self.saveStatesToDisk(dev, keyValueList)
+			
+			#Then, if there is no Automated Temp Contro for this Group update each device that is in the group
+			if not dev.ownerProps.get("groupAutomatedTempControl"):
+				for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
+					if str(tmpDev.id) in deviceIdList:   #Device is in the group
+						self.actionControlThermostat( action, tmpDev)
+									
+								
+								
+
+		###### SET FAN MODE ######
+		elif action.thermostatAction == indigo.kThermostatAction.SetFanMode:
+			keyValueList = []
+			keyValueList.append({'key':'displayFanSpeed', 'value':action.actionValue})
+			dev.updateStatesOnServer(keyValueList)
+			self.saveStatesToDisk(dev, keyValueList)
+
+			#Then update each device that is in the group
+			for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
+				if str(tmpDev.id) in deviceIdList:   #Device is in the group
+					self.actionControlThermostat( action, tmpDev)
+	
+			
+		###### SET COOL SETPOINT ######
+		elif action.thermostatAction == indigo.kThermostatAction.SetCoolSetpoint:
+			newSetpoint = action.actionValue
+			keyValueList = []
+			for key in ['displaySetpointCool','setpointCool', 'displaySetpointTemp']:
+				keyValueList.append({'key':key, 'value':newSetpoint, 'decimalPlaces':0})
+			dev.updateStatesOnServer(keyValueList)
+			self.saveStatesToDisk(dev, keyValueList)
+			#Then, if there is no Automated Temp Contro for this Group update each device that is in the group
+			if not dev.ownerProps.get("groupAutomatedTempControl"):
+				for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
+					if str(tmpDev.id) in deviceIdList:   #Device is in the group
+						self.actionControlThermostat( action, tmpDev)
+				
+			
+			
+		###### SET HEAT SETPOINT ######
+		elif action.thermostatAction == indigo.kThermostatAction.SetHeatSetpoint:
+			newSetpoint = action.actionValue
+			keyValueList = []
+			for key in ['displaySetpointHeat','setpointHeat', 'displaySetpointTemp']:
+				keyValueList.append({'key':key, 'value':newSetpoint})
+			dev.updateStatesOnServer(keyValueList)
+			self.saveStatesToDisk(dev, keyValueList)
+			
+			#Then, if there is no Automated Temp Contro for this Group update each device that is in the group
+			if not dev.ownerProps.get("groupAutomatedTempControl"):
+				for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
+					if str(tmpDev.id) in deviceIdList:   #Device is in the group
+						self.actionControlThermostat( action, tmpDev)
+				
+		###### DECREASE/INCREASE COOL SETPOINT ######
+		elif action.thermostatAction == indigo.kThermostatAction.DecreaseCoolSetpoint:
+			self.logger.debug("*****DECREASE/INCREASE COOL SETPOINT Not supported Function ")
+			
+		elif action.thermostatAction == indigo.kThermostatAction.IncreaseCoolSetpoint:
+			self.logger.debug("*****DECREASE/INCREASE COOL SETPOINT Not supported Function ")
+			
+		###### DECREASE/INCREASE HEAT SETPOINT ######
+		elif action.thermostatAction == indigo.kThermostatAction.DecreaseHeatSetpoint:
+			self.logger.debug("*****DECREASE/INCREASE COOL SETPOINT Not supported Function ")
+			
+		elif action.thermostatAction == indigo.kThermostatAction.IncreaseHeatSetpoint:
+			self.logger.debug("*****DECREASE/INCREASE COOL SETPOINT Not supported Function ")
+		
+		###### REQUEST STATE UPDATES ######
+		elif action.thermostatAction in [indigo.kThermostatAction.RequestStatusAll, indigo.kThermostatAction.RequestMode, indigo.kThermostatAction.RequestEquipmentState, indigo.kThermostatAction.RequestTemperatures, indigo.kThermostatAction.RequestHumidities,indigo.kThermostatAction.RequestDeadbands, indigo.kThermostatAction.RequestSetpoints]:
+			self._refreshStatesFromHardware(dev, True, False)
+			self.logger.info(u"Requested Hardware Status for Mitsubishi unit  \"%s\" %s" % (dev.name, "."))
+			
+	
+	
+	
 	########################################
 	# Thermostat Action callback
 	######################
 	# Main thermostat action bottleneck called by Indigo Server.
 	def actionControlThermostat(self, action, dev):
-		###### SET HVAC MODE ######
-		if action.thermostatAction == indigo.kThermostatAction.SetHvacMode:
-			self._handleChangeHvacModeAction(dev, action.actionMode)
-			
-			#self.unitCommunication( dev, action.actionMode, action.actionValue)
-		###### SET FAN MODE ######
-		elif action.thermostatAction == indigo.kThermostatAction.SetFanMode:
-			self._handleChangeFanModeAction(dev, action.actionMode)
-
-		###### SET COOL SETPOINT ######
-		elif action.thermostatAction == indigo.kThermostatAction.SetCoolSetpoint:
-			newSetpoint = action.actionValue
-			self._handleChangeSetpointAction(dev, newSetpoint, u"change cool setpoint", u"setpointCool")
-
-		###### SET HEAT SETPOINT ######
-		elif action.thermostatAction == indigo.kThermostatAction.SetHeatSetpoint:
-			newSetpoint = action.actionValue
-			self._handleChangeSetpointAction(dev, newSetpoint, u"change heat setpoint", u"setpointHeat")
-
-		###### DECREASE/INCREASE COOL SETPOINT ######
-		elif action.thermostatAction == indigo.kThermostatAction.DecreaseCoolSetpoint:
-			newSetpoint = dev.coolSetpoint - action.actionValue
-			self._handleChangeSetpointAction(dev, newSetpoint, u"decrease cool setpoint", u"setpointCool")
-
-		elif action.thermostatAction == indigo.kThermostatAction.IncreaseCoolSetpoint:
-			newSetpoint = dev.coolSetpoint + action.actionValue
-			self._handleChangeSetpointAction(dev, newSetpoint, u"increase cool setpoint", u"setpointCool")
-
-		###### DECREASE/INCREASE HEAT SETPOINT ######
-		elif action.thermostatAction == indigo.kThermostatAction.DecreaseHeatSetpoint:
-			newSetpoint = dev.heatSetpoint - action.actionValue
-			self._handleChangeSetpointAction(dev, newSetpoint, u"decrease heat setpoint", u"setpointHeat")
-
-		elif action.thermostatAction == indigo.kThermostatAction.IncreaseHeatSetpoint:
-			newSetpoint = dev.heatSetpoint + action.actionValue
-			self._handleChangeSetpointAction(dev, newSetpoint, u"increase heat setpoint", u"setpointHeat")
-
-		###### REQUEST STATE UPDATES ######
-		elif action.thermostatAction in [indigo.kThermostatAction.RequestStatusAll, indigo.kThermostatAction.RequestMode, indigo.kThermostatAction.RequestEquipmentState, indigo.kThermostatAction.RequestTemperatures, indigo.kThermostatAction.RequestHumidities,indigo.kThermostatAction.RequestDeadbands, indigo.kThermostatAction.RequestSetpoints]:
-			self._refreshStatesFromHardware(dev, True, False)
-			indigo.server.log(u"Requested Hardware Status for Mitsubishi unit  \"%s\" %s" % (dev.name, "."))
-
+		if dev.deviceTypeId == "mitsubishiHVACGroup":
+			self.actionControlGroupThermostat(action, dev)
+		else:
+			###### SET HVAC MODE ######
+			self.logger.info("Someone asked for something - Mitsubishi HVAC Thermostat Action Callback  \"%s\"%s\" %s" % (dev.name, action.description, ".") )
+			if action.thermostatAction == indigo.kThermostatAction.SetHvacMode:
+				self._handleChangeHvacModeAction(dev, action.actionMode)
+				
+				#self.unitCommunication( dev, action.actionMode, action.actionValue)
+			###### SET FAN MODE ######
+			elif action.thermostatAction == indigo.kThermostatAction.SetFanMode:
+				self._handleChangeFanModeAction(dev, action.actionMode)
+	
+			###### SET COOL SETPOINT ######
+			elif action.thermostatAction == indigo.kThermostatAction.SetCoolSetpoint:
+				newSetpoint = action.actionValue
+				self._handleChangeSetpointAction(dev, newSetpoint, u"change cool setpoint", u"setpointCool")
+	
+			###### SET HEAT SETPOINT ######
+			elif action.thermostatAction == indigo.kThermostatAction.SetHeatSetpoint:
+				newSetpoint = action.actionValue
+				self._handleChangeSetpointAction(dev, newSetpoint, u"change heat setpoint", u"setpointHeat")
+				
+				
+	
+			###### DECREASE/INCREASE COOL SETPOINT ######
+			elif action.thermostatAction == indigo.kThermostatAction.DecreaseCoolSetpoint:
+				newSetpoint = dev.coolSetpoint - action.actionValue
+				self._handleChangeSetpointAction(dev, newSetpoint, u"decrease cool setpoint", u"setpointCool")
+	
+			elif action.thermostatAction == indigo.kThermostatAction.IncreaseCoolSetpoint:
+				newSetpoint = dev.coolSetpoint + action.actionValue
+				self._handleChangeSetpointAction(dev, newSetpoint, u"increase cool setpoint", u"setpointCool")
+	
+			###### DECREASE/INCREASE HEAT SETPOINT ######
+			elif action.thermostatAction == indigo.kThermostatAction.DecreaseHeatSetpoint:
+				newSetpoint = dev.heatSetpoint - action.actionValue
+				self._handleChangeSetpointAction(dev, newSetpoint, u"decrease heat setpoint", u"setpointHeat")
+	
+			elif action.thermostatAction == indigo.kThermostatAction.IncreaseHeatSetpoint:
+				newSetpoint = dev.heatSetpoint + action.actionValue
+				self._handleChangeSetpointAction(dev, newSetpoint, u"increase heat setpoint", u"setpointHeat")
+	
+			###### REQUEST STATE UPDATES ######
+			elif action.thermostatAction in [indigo.kThermostatAction.RequestStatusAll, indigo.kThermostatAction.RequestMode, indigo.kThermostatAction.RequestEquipmentState, indigo.kThermostatAction.RequestTemperatures, indigo.kThermostatAction.RequestHumidities,indigo.kThermostatAction.RequestDeadbands, indigo.kThermostatAction.RequestSetpoints]:
+				self._refreshStatesFromHardware(dev, True, False)
+				self.logger.info(u"Requested Hardware Status for Mitsubishi unit  \"%s\" %s \" %s" % (dev.name, str(action),"."))
+				
 	########################################
 	# General Action callback
 	######################
@@ -1037,72 +1297,10 @@ class Plugin(indigo.PluginBase):
 			indigo.server.log(u"sent \"%s\" %s" % (dev.name, "status request"))
 
 
-	########################################
-	# Internal utility methods. Some of these are useful to provide
-	# a higher-level abstraction for accessing/changing thermostat
-	# properties or states.
-	######################
-	def _changeTempSensorCount(self, dev, count):
-		newProps = dev.pluginProps
-		newProps["NumTemperatureInputs"] = count
-		dev.replacePluginPropsOnServer(newProps)
-
-	def _changeHumiditySensorCount(self, dev, count):
-		newProps = dev.pluginProps
-		newProps["NumHumidityInputs"] = count
-		dev.replacePluginPropsOnServer(newProps)
-
-	def _changeAllTempSensorCounts(self, count):
-		for dev in indigo.devices.iter("self"):
-			self._changeTempSensorCount(dev, count)
-
-	def _changeAllHumiditySensorCounts(self, count):
-		for dev in indigo.devices.iter("self"):
-			self._changeHumiditySensorCount(dev, count)
-
-	######################
-	def _changeTempSensorValue(self, dev, index, value, keyValueList):
-		# Update the temperature value at index. If index is greater than the "NumTemperatureInputs"
-		# an error will be displayed in the Event Log "temperature index out-of-range"
-		stateKey = u"temperatureInput" + str(index)
-		keyValueList.append({'key':stateKey, 'value':value, 'uiValue':"%d °F" % (value)})
-		self.debugLog(u"\"%s\" updating %s %d" % (dev.name, stateKey, value))
-
-	def _changeHumiditySensorValue(self, dev, index, value, keyValueList):
-		# Update the humidity value at index. If index is greater than the "NumHumidityInputs"
-		# an error will be displayed in the Event Log "humidity index out-of-range"
-		stateKey = u"humidityInput" + str(index)
-		keyValueList.append({'key':stateKey, 'value':value, 'uiValue':"%d °F" % (value)})
-		self.debugLog(u"\"%s\" updating %s %d" % (dev.name, stateKey, value))
-
 
 
 	
 
-	########################################
-	# Custom Plugin Action callbacks (defined in Actions.xml)
-	######################
-	def setBacklightBrightness(self, pluginAction, dev):
-		try:
-			newBrightness = int(pluginAction.props.get(u"brightness", 100))
-		except ValueError:
-			# The int() cast above might fail if the user didn't enter a number:
-			indigo.server.log(u"set backlight brightness action to device \"%s\" -- invalid brightness value" % (dev.name,), isError=True)
-			return
-
-		# Command hardware module (dev) to set backlight brightness here:
-		# ** IMPLEMENT ME **
-		sendSuccess = True		# Set to False if it failed.
-
-		if sendSuccess:
-			# If success then log that the command was successfully sent.
-			indigo.server.log(u"sent \"%s\" %s to %d" % (dev.name, "set backlight brightness", newBrightness))
-
-			# And then tell the Indigo Server to update the state:
-			dev.updateStateOnServer("backlightBrightness", newBrightness, uiValue="%d%%" % (newBrightness))
-		else:
-			# Else log failure but do NOT update state on Indigo Server.
-			indigo.server.log(u"send \"%s\" %s to %d failed" % (dev.name, "set backlight brightness", newBrightness), isError=True)
 
 	########################################
 	# Actions defined in MenuItems.xml. In this case we just use these menu actions to

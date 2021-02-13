@@ -30,6 +30,11 @@
 			<Name>Refresh Status</Name>
 			<CallbackMethod>refreshStatesFromHardware</CallbackMethod>
 	</Action>
+	<Action id="refreshStatesFromUnits" deviceFilter="self">
+		<Name>Refresh Group Status</Name>
+		<CallbackMethod>refreshStatesFromUnits</CallbackMethod>
+	</Action>
+
 	<Action id="setVaneDirection" deviceFilter="self">
 		<Name>Set Vane Direction</Name>
 		<CallbackMethod>setVaneDirection</CallbackMethod>
