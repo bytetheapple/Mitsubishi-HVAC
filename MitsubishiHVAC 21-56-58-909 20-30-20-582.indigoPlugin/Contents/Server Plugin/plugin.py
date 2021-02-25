@@ -1024,7 +1024,20 @@ class Plugin(indigo.PluginBase):
 									self._handleChangeHvacModeAction(tmpDev, indigo.kHvacMode.Off)
 									self.logger.info("Adjusting Group \"%s device: \"%s Current Temp:\"%s  turning off the cool" % (dev.name, tmpDev.name, dev.states["temperatureInput1"]) )
 			
-			
+							elif devMode == indigo.kHvacMode.Off:
+								if not tmpDev.states["hvacOperationMode"] == indigo.kHvacMode.Off:
+									#Turn the unit off becasue Mode is Off
+									offPeriod = onTime - offTime
+									onPeriod = now - onTime
+									aveOnTime = 0 if offPeriod.seconds == 0 else 100*onPeriod.seconds/offPeriod.seconds
+									dev.updateStateOnServer("tempControlAveTimeOn", aveOnTime,  decimalPlaces=1)									
+									dev.updateStateOnServer("tempControlOffTime", nowString)
+									dev.updateStateOnServer("tempControlIsOn", False)
+									self._handleChangeHvacModeAction(tmpDev, indigo.kHvacMode.Off)
+									self.logger.info("Adjusting Group \"%s device: \"%s Current Temp:\"%s  turning off the heat ." % (dev.name, tmpDev.name, dev.states["temperatureInput1"]) )
+								
+								
+					
 			
 
 	########################################
@@ -1133,11 +1146,15 @@ class Plugin(indigo.PluginBase):
 			dev.updateStatesOnServer(keyValueList)
 			self.saveStatesToDisk(dev, keyValueList)
 			
-			#Then, if there is no Automated Temp Contro for this Group update each device that is in the group
-			if not dev.ownerProps.get("groupAutomatedTempControl"):
-				for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
-					if str(tmpDev.id) in deviceIdList:   #Device is in the group
-						self.actionControlThermostat( action, tmpDev)
+			#Then, if there is no Automated Temp Control for this Group update each device that is in the group
+			# if there is automated temp control, then turn each unit in the group off so the automated thermostat can control them
+			for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
+				if str(tmpDev.id) in deviceIdList:   #Device is in the group
+					if dev.ownerProps.get("groupAutomatedTempControl"):
+						action.actionMode = indigo.kHvacMode.Off
+					self.actionControlThermostat( action, tmpDev)
+					
+							
 									
 								
 								
