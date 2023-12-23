@@ -38,7 +38,16 @@
 						<Label>Automate temperature control for the group</Label>
 						<Title>Select to enable</Title>
 					</Field>
-
+					<Field id="groupExternalTempSensor" type="checkbox" defaultValue="false" tooltip="select to allow for a backup external temp sensor "  visibleBindingId="groupAutomatedTempControl" visibleBindingValue="true">
+						<Label>Backup external temp sensor</Label>
+						<Title>Select to enable</Title>
+					</Field>
+					<Field id="externalTempSensorDevId" type="menu" visibleBindingId="groupExternalTempSensor" visibleBindingValue="true">
+						<Label>Backup external temp sensor:</Label>
+						<List class="indigo.devices" filter="indigo.sensor"/>
+					</Field>
+					<Field id="simpleSeparator1" type="separator"/>
+					
 				</ConfigUI>
 				<States>
 					<State id="groupActive">
@@ -192,6 +201,20 @@
 						<TriggerLabel>Thermostat Duty Cycle</TriggerLabel>
 						<ControlPageLabel>Thermostat Duty Cycle</ControlPageLabel>
 					</State>
+					<State id='accumTimeOn'>
+						<ValueType>Number</ValueType>
+						<TriggerLabel>Total On Time</TriggerLabel>
+						<ControlPageLabel>Total On Time</ControlPageLabel>
+					</State>
+					<State id='accumTimeOff'>
+						<ValueType>Number</ValueType>
+						<TriggerLabel>Total Off Time</TriggerLabel>
+						<ControlPageLabel>Total Off Time</ControlPageLabel>
+					</State>
+					
+					
+					
+					
 					<State id='tempControlIsOn'>
 						<ValueType>Boolean</ValueType>
 						<TriggerLabel>Thermostat - units on</TriggerLabel>

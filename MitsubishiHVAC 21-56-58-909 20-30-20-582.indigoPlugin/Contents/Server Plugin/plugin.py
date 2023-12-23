@@ -73,7 +73,8 @@ class Plugin(indigo.PluginBase):
 		self.debug = False
 		self.simulateTempChanges = True		# Every few seconds update to random temperature values
 		self.simulateHumidityChanges = True	# Every few seconds update to random humidity values
-		self.refreshDelay = 5				# Simulate new temperature values every 1 seconds
+		self.refreshDelay = 15				# seconds between hardware state refreshes
+		self.thermostatPeriod = 6			# How many refresh cycles between thermostat cycles
 		self.groupTempOffset = 3				# Number of degrees past the desired setpoint that each unit in a group is set to in order ot ensure they actually stay on
 		self.debugEnabled = False			# Can be set to True in the Config UI
 	class kumo:
@@ -479,7 +480,7 @@ class Plugin(indigo.PluginBase):
 					self.restoreConnectionStatus(dev)	
 					break
 				
-			self.logger.debug("Retrying message to address: "+ address + " times= " + str(retryTimes) )
+			self.logger.debug("Retrying message to address: "+ address + "unit: " + name + " times= " + str(retryTimes) )
 		
 		if success == False:
 			self.reduceConnectionStatus(dev)
@@ -920,9 +921,17 @@ class Plugin(indigo.PluginBase):
 			if numOfRemoteSensors > 0:
 				aveTemp = sumOfRemoteTemps / numOfRemoteSensors
 				aveHumidity = sumOfRemoteHumidity / numOfRemoteSensors
-			else:
+			else: #no units with remote temp sensors in this group
 				aveTemp = sumOfTemps / numOfSensors
 				aveHumidity = 0
+				if dev.ownerProps.get("groupExternalTempSensor") and not dev.ownerProps.get("externalTempSensorDevId") == None: #all remote temp sensors are MIA and there is a backup
+					myExternalTempSensor = dev.ownerProps.get("externalTempSensorDevId")
+					for tempSensor in indigo.devices.iter("indigo.sensor"):						
+						if str(tempSensor.id) == myExternalTempSensor:
+							#self.logger.info("All of external sensors are missing form %s so using  %s as a backup which is reporting %s" % (dev.name, tempSensor.name, str(tempSensor.states["sensorTemp"])))
+							aveTemp = tempSensor.states["sensorTemp"]
+							
+							
 
 			keyValueList.append({'key':'numOfDisconnectedUnits', 'value':numOfDisconnectedUnits})	
 			keyValueList.append({'key':'sensorBatteryLevel', 'value':sensorBatteryLevel})
@@ -969,7 +978,8 @@ class Plugin(indigo.PluginBase):
 				nowString = now.isoformat()
 				offTime = datetime.datetime.strptime(dev.states["tempControlOffTime"], "%Y-%m-%dT%H:%M:%S.%f")
 				onTime = datetime.datetime.strptime(dev.states["tempControlOnTime"], "%Y-%m-%dT%H:%M:%S.%f")
-				
+				onPeriod = offTime-onTime
+				offPeriod = onTime-offTime
 				
 				for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
 					if str(tmpDev.id) in deviceIdList:   #Device is in the group
@@ -979,8 +989,7 @@ class Plugin(indigo.PluginBase):
 									#Turn the units on becauce the temp is low
 									offPeriod = now - offTime
 									onPeriod = offTime- onTime
-									aveOnTime = 0 if offPeriod.seconds == 0 else 100*onPeriod.seconds/offPeriod.seconds
-									dev.updateStateOnServer("tempControlAveTimeOn", aveOnTime,  decimalPlaces=1)
+									self.calcAve(dev, onPeriod, offPeriod)									
 									dev.updateStateOnServer("tempControlOnTime", nowString)
 									dev.updateStateOnServer("tempControlIsOn", True)
 									self._handleChangeHvacModeAction(tmpDev, indigo.kHvacMode.Heat)
@@ -988,12 +997,12 @@ class Plugin(indigo.PluginBase):
 									self._handleChangeSetpointAction(tmpDev, newSetPoint, u"change heat setpoint", u"setpointHeat")
 									self.logger.info("Adjusting Group \"%s device: \"%s Current Temp:\"%s  turning the heat up to  \"%s" % (dev.name, tmpDev.name, dev.states["temperatureInput1"], str(newSetPoint)) )
 									
+									
 								elif devCurrentTemp > devSpHeat and tmpDev.states["hvacOperationMode"] == indigo.kHvacMode.Heat:
 									#Turn the unit off becasue the temp is right
 									offPeriod = onTime - offTime
 									onPeriod = now - onTime
-									aveOnTime = 0 if offPeriod.seconds == 0 else 100*onPeriod.seconds/offPeriod.seconds
-									dev.updateStateOnServer("tempControlAveTimeOn", aveOnTime,  decimalPlaces=1)									
+									self.calcAve(dev, onPeriod, offPeriod)
 									dev.updateStateOnServer("tempControlOffTime", nowString)
 									dev.updateStateOnServer("tempControlIsOn", False)
 									self._handleChangeHvacModeAction(tmpDev, indigo.kHvacMode.Off)
@@ -1004,8 +1013,7 @@ class Plugin(indigo.PluginBase):
 									#Turn the units on becauce the temp is high
 									offPeriod = now - offTime
 									onPeriod = offTime- onTime
-									aveOnTime = 0 if offPeriod.seconds == 0 else 100*onPeriod.seconds/offPeriod.seconds
-									dev.updateStateOnServer("tempControlAveTimeOn", aveOnTime,  decimalPlaces=1)									
+									self.calcAve(dev, onPeriod, offPeriod)
 									dev.updateStateOnServer("tempControlOnTime", nowString)
 									dev.updateStateOnServer("tempControlIsOn", True)
 									self._handleChangeHvacModeAction(tmpDev, indigo.kHvacMode.Cool)
@@ -1017,8 +1025,7 @@ class Plugin(indigo.PluginBase):
 									#Turn the unit off becasue the temp is right
 									offPeriod = onTime - offTime
 									onPeriod = now - onTime
-									aveOnTime = 0 if offPeriod.seconds == 0 else 100*onPeriod.seconds/offPeriod.seconds
-									dev.updateStateOnServer("tempControlAveTimeOn", aveOnTime,  decimalPlaces=1)									
+									self.calcAve(dev, onPeriod, offPeriod)
 									dev.updateStateOnServer("tempControloffTime", nowString)
 									dev.updateStateOnServer("tempControlIsOn", False)
 									self._handleChangeHvacModeAction(tmpDev, indigo.kHvacMode.Off)
@@ -1029,16 +1036,29 @@ class Plugin(indigo.PluginBase):
 									#Turn the unit off becasue Mode is Off
 									offPeriod = onTime - offTime
 									onPeriod = now - onTime
-									aveOnTime = 0 if offPeriod.seconds == 0 else 100*onPeriod.seconds/offPeriod.seconds
-									dev.updateStateOnServer("tempControlAveTimeOn", aveOnTime,  decimalPlaces=1)									
+									self.calcAve(dev, onPeriod, offPeriod)
 									dev.updateStateOnServer("tempControlOffTime", nowString)
 									dev.updateStateOnServer("tempControlIsOn", False)
 									self._handleChangeHvacModeAction(tmpDev, indigo.kHvacMode.Off)
-									self.logger.info("Adjusting Group \"%s device: \"%s Current Temp:\"%s  turning off the heat ." % (dev.name, tmpDev.name, dev.states["temperatureInput1"]) )
-								
-								
-					
-			
+									self.logger.info("Mode Off - Adjusting Group \"%s device: \"%s Current Temp:\"%s  turning off the heat ." % (dev.name, tmpDev.name, dev.states["temperatureInput1"]) )
+							
+
+	def calcAve(self, dev, onPeriod, offPeriod):
+		accumTimeOn = .9*dev.states["accumTimeOn"] + onPeriod.seconds
+		accumTimeOff = .9*dev.states["accumTimeOff"] + offPeriod.seconds
+		dev.updateStateOnServer("accumTimeOn", accumTimeOn)
+		dev.updateStateOnServer("accumTimeOff", accumTimeOff)
+		aveTime = 100*accumTimeOn/(accumTimeOn + accumTimeOff)
+		dev.updateStateOnServer("tempControlAveTimeOn", aveTime, decimalPlaces = 1)
+		self.logger.info("onperiod in seconds = %s, offperiod in seconds = %s and aveOnTime = %s" % (onPeriod.seconds, offPeriod.seconds, aveTime))
+
+	
+	
+	
+	
+	
+	
+	
 
 	########################################
 	def startup(self):
@@ -1050,7 +1070,9 @@ class Plugin(indigo.PluginBase):
 	########################################
 	def runConcurrentThread(self):
 		try:
+			cycles = 0	#cycles counts hardware refresh cycles.  When it hits thermostatPeriod, the group thermostat control loop is executed ensuring that all hardware states have been updated between thermostat cycles
 			while True:
+				cycles += 1
 				for dev in indigo.devices.iter("self"):
 					if not dev.deviceTypeId == "mitsubishiHVACGroup":
 						if not dev.enabled or not dev.configured:
@@ -1071,7 +1093,9 @@ class Plugin(indigo.PluginBase):
 					# Indigo Server.
 						self.checkOffTimerExpiration(dev)
 						self._refreshStatesFromUnits(dev)
-						self.groupTemperatureControl(dev)
+						if cycles%self.thermostatPeriod == 0:
+							cycles = 0
+							self.groupTemperatureControl(dev)
 						
 
 				self.sleep(self.refreshDelay)
@@ -1180,11 +1204,18 @@ class Plugin(indigo.PluginBase):
 				keyValueList.append({'key':key, 'value':newSetpoint, 'decimalPlaces':0})
 			dev.updateStatesOnServer(keyValueList)
 			self.saveStatesToDisk(dev, keyValueList)
+			
+			
 			#Then, if there is no Automated Temp Contro for this Group update each device that is in the group
-			if not dev.ownerProps.get("groupAutomatedTempControl"):
-				for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
-					if str(tmpDev.id) in deviceIdList:   #Device is in the group
-						self.actionControlThermostat( action, tmpDev)
+			if dev.ownerProps.get("groupAutomatedTempControl"):
+				#for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
+					#if str(tmpDev.id) in deviceIdList:   #Device is in the group
+					#	self.actionControlThermostat( action, tmpDev)
+				newSetpoint = newSetpoint-self.groupTempOffset
+			for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
+				if str(tmpDev.id) in deviceIdList:   #Device is in the group
+					self._handleChangeSetpointAction(tmpDev, newSetpoint, u"change cool setpoint", u"setpointCool")
+					self.logger.info("Adjusting Group(ActionControlGroup) \"%s device: \"%s Current Temp:\"%s  turning the AC down to  \"%s" % (dev.name, tmpDev.name, dev.states["temperatureInput1"], str(newSetpoint)) )
 				
 			
 			
@@ -1197,25 +1228,29 @@ class Plugin(indigo.PluginBase):
 			dev.updateStatesOnServer(keyValueList)
 			self.saveStatesToDisk(dev, keyValueList)
 			
-			#Then, if there is no Automated Temp Contro for this Group update each device that is in the group
-			if not dev.ownerProps.get("groupAutomatedTempControl"):
-				for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
-					if str(tmpDev.id) in deviceIdList:   #Device is in the group
-						self.actionControlThermostat( action, tmpDev)
+			#Then, if there is no Automated Temp Control for this Group update each device that is in the group
+			if dev.ownerProps.get("groupAutomatedTempControl"):
+				newSetpoint = newSetpoint+self.groupTempOffset
+			for tmpDev in indigo.devices.iter("self.mitsubishiHVACDuctless"):
+				if str(tmpDev.id) in deviceIdList:   #Device is in the group
+					self._handleChangeSetpointAction(tmpDev, newSetpoint, u"change heat setpoint", u"setpointHeat")
+					self.logger.info("Adjusting Group(ActionControlGroup) \"%s device: \"%s Current Temp:\"%s  turning the heat up to  \"%s" % (dev.name, tmpDev.name, dev.states["temperatureInput1"], str(newSetpoint)) )
+
+
 				
 		###### DECREASE/INCREASE COOL SETPOINT ######
 		elif action.thermostatAction == indigo.kThermostatAction.DecreaseCoolSetpoint:
-			self.logger.debug("*****DECREASE/INCREASE COOL SETPOINT Not supported Function ")
+			self.logger.info("*****DECREASE/INCREASE COOL SETPOINT Not supported Function ")
 			
 		elif action.thermostatAction == indigo.kThermostatAction.IncreaseCoolSetpoint:
-			self.logger.debug("*****DECREASE/INCREASE COOL SETPOINT Not supported Function ")
+			self.logger.info("*****DECREASE/INCREASE COOL SETPOINT Not supported Function ")
 			
 		###### DECREASE/INCREASE HEAT SETPOINT ######
 		elif action.thermostatAction == indigo.kThermostatAction.DecreaseHeatSetpoint:
-			self.logger.debug("*****DECREASE/INCREASE COOL SETPOINT Not supported Function ")
+			self.logger.info("*****DECREASE/INCREASE COOL SETPOINT Not supported Function ")
 			
 		elif action.thermostatAction == indigo.kThermostatAction.IncreaseHeatSetpoint:
-			self.logger.debug("*****DECREASE/INCREASE COOL SETPOINT Not supported Function ")
+			self.logger.info("*****DECREASE/INCREASE COOL SETPOINT Not supported Function ")
 		
 		###### REQUEST STATE UPDATES ######
 		elif action.thermostatAction in [indigo.kThermostatAction.RequestStatusAll, indigo.kThermostatAction.RequestMode, indigo.kThermostatAction.RequestEquipmentState, indigo.kThermostatAction.RequestTemperatures, indigo.kThermostatAction.RequestHumidities,indigo.kThermostatAction.RequestDeadbands, indigo.kThermostatAction.RequestSetpoints]:
